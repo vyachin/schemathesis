@@ -1,6 +1,7 @@
 import logging
 import time
 from contextlib import contextmanager
+from datetime import timedelta
 from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Union
 
 import attr
@@ -148,6 +149,7 @@ def network_test(
     # pylint: disable=too-many-arguments
     timeout = prepare_timeout(request_timeout)
     response = case.call(session=session, timeout=timeout)
+    result.store_requests_response(case, response)
     run_checks(case, checks, result, response)
 
 
@@ -183,7 +185,11 @@ def wsgi_test(
     # pylint: disable=too-many-arguments
     headers = _prepare_wsgi_headers(headers, auth, auth_type)
     with catching_logs(LogCaptureHandler(), level=logging.DEBUG) as recorded:
+        start = time.monotonic()
         response = case.call_wsgi(headers=headers)
+        delta = time.monotonic() - start
+        elapsed = timedelta(seconds=delta)
+    result.store_wsgi_response(case, response, elapsed, headers)
     result.logs.extend(recorded.records)
     run_checks(case, checks, result, response)
 

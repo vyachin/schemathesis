@@ -1,3 +1,4 @@
+import json
 from typing import Dict, Optional
 
 import pytest
@@ -15,7 +16,7 @@ from schemathesis.checks import (
     response_schema_conformance,
     status_code_conformance,
 )
-from schemathesis.constants import __version__
+from schemathesis.constants import USER_AGENT, __version__
 from schemathesis.exceptions import InvalidSchema
 from schemathesis.models import Status
 from schemathesis.runner import events, get_base_url, get_requests_auth, prepare
@@ -105,7 +106,7 @@ def test_execute_base_url_found(base_url, schema_url, app):
     assert_incoming_requests_num(app, 3)
 
 
-def test_execute(args):
+def test_execute(request, args):
     app, kwargs = args
     # When the runner is executed against the default test app
     stats = execute(**kwargs)
@@ -123,6 +124,49 @@ def test_execute(args):
 
     # And statistic is showing the breakdown of cases types
     assert stats.total == {"not_a_server_error": {Status.success: 1, Status.failure: 2, "total": 3}}
+
+    base_url = "" if isinstance(app, Flask) else request.getfixturevalue("base_url")
+
+    # failure
+    assert len(stats.results[0].interactions) == 2
+    failure = stats.results[0].interactions[0]
+    assert failure.request.asdict() == {
+        "method": "GET",
+        "path": "/api/failure",
+        "base_url": base_url,
+        "body": None,
+        "cookies": None,
+        "headers": None,
+        "query": None,
+        "form_data": None,
+    }
+    assert failure.response.url == f"{base_url}/api/failure"
+    assert failure.response.status_code == 500
+    if isinstance(app, Flask):
+        assert failure.response.headers == {"Content-Type": "text/html; charset=utf-8", "Content-Length": "290"}
+    else:
+        assert failure.response.headers["Content-Type"] == "text/plain; charset=utf-8"
+        assert failure.response.headers["Content-Length"] == "26"
+    # success
+    assert len(stats.results[1].interactions) == 1
+    success = stats.results[1].interactions[0]
+    assert success.request.asdict() == {
+        "method": "GET",
+        "path": "/api/success",
+        "base_url": base_url,
+        "body": None,
+        "cookies": None,
+        "headers": None,
+        "query": None,
+        "form_data": None,
+    }
+    assert success.response.url == f"{base_url}/api/success"
+    assert success.response.status_code == 200
+    assert json.loads(success.response.content) == {"success": True}
+    if isinstance(app, Flask):
+        assert success.response.headers == {"Content-Type": "application/json", "Content-Length": "17"}
+    else:
+        assert success.response.headers["Content-Type"] == "application/json; charset=utf-8"
 
 
 def test_auth(args):
